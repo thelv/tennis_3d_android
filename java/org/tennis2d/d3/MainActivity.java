@@ -68,6 +68,7 @@ public class MainActivity extends AppCompatActivity
             {
                 try
                 {
+                    if(! Vars.connected) return;;
                     JSONArray o=new JSONArray();
                     o.put(Rotation.n[0]);
                     o.put(Rotation.n[1]);
@@ -123,6 +124,7 @@ class Vars
     public static float[] a=new float[3];
     public static float[] orientationAngles=new float[3];
     public static float[] rotationMatrix=new float[16];
+    public static boolean connected=false;
 }
 
 class SimpleServer extends WebSocketServer
@@ -137,7 +139,10 @@ class SimpleServer extends WebSocketServer
     {
        // conn.send("Welcome to the server!"); //This method sends a message to the new client
        // broadcast("new connection: "+handshake.getResourceDescriptor()); //This method sends a message to all clients connected
+        Vars.connected=true;
         System.out.println("new connection to "+conn.getRemoteSocketAddress());
+        send();
+
     }
 
     @Override
@@ -149,7 +154,37 @@ class SimpleServer extends WebSocketServer
     @Override
     public void onMessage(WebSocket conn, String message)
     {
-        System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
+        send();
+        //System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
+    }
+
+    private void send()
+    {
+        try
+        {
+            if(! Vars.connected) return;;
+
+            JSONArray o=new JSONArray();
+            o.put(Rotation.n[0]);
+            o.put(Rotation.n[1]);
+            o.put(Rotation.n[2]);
+
+            JSONArray p=new JSONArray();
+            p.put(Accelerometer.v_[0]);
+            p.put(Accelerometer.v_[1]);
+            p.put(Accelerometer.v_[2]);
+
+            JSONArray r=new JSONArray();
+            r.put(o);
+            r.put(p);
+            r.put(1);
+
+            broadcast(r.toString());
+        }
+        catch(Exception e)
+        {
+            //
+        }
     }
 
     @Override
@@ -299,11 +334,12 @@ class Accelerometer implements SensorEventListener
         float l=V.absSquare(a_);
         if(l<3.6)
         {
-            a_=V.ps((float)-1, v);
+            a_=V.ps((float)-2, v);
         }
         long t_=new Date().getTime();
         v=V.s(v, V.ps((float)(t_-t)/1000, a_));
         t=t_;
+
 
         float[] n=Rotation.n_;
         float k=(float)Math.sqrt(1-n[2]*n[2]);
@@ -313,14 +349,19 @@ class Accelerometer implements SensorEventListener
         v_[0]=-v[0]*nxy[0]-v[1]*nxy[1];
         v_[1]=v[0]*nxy[1]-v[1]*nxy[0];
 
-        n=Rotation.n;
+        this.v_[0]=v_[0];
+        this.v_[1]=v_[1];
+        this.v_[2]=v[2];
+
+
+/*        n=Rotation.n;
         k=(float)Math.sqrt(1-n[2]*n[2]);
         nxy[0]=n[0]/k; nxy[1]=n[1]/k;
 
         this.v_[0]=v_[0]*nxy[0]-v_[1]*nxy[1];
         this.v_[1]=v_[0]*nxy[1]+v_[1]*nxy[0];
 
-        this.v_[2]=v[2];
+        this.v_[2]=v[2];*/
     }
 
     public void onAccuracyChanged(Sensor sensor, int accuracy)
