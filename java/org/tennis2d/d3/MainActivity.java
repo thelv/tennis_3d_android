@@ -29,6 +29,7 @@ import java.nio.ByteOrder;
 import java.util.Date;
 import java.util.Timer;
 import java.util.TimerTask;
+import ru.thelv.lib.Preferences;
 
 public class MainActivity extends AppCompatActivity
 {
@@ -37,6 +38,7 @@ public class MainActivity extends AppCompatActivity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        Preferences.init(this);
 
         findViewById(R.id.all).setOnClickListener(new View.OnClickListener()
         {
@@ -47,10 +49,20 @@ public class MainActivity extends AppCompatActivity
             }
         });
 
+        findViewById(R.id.calibrate).setOnClickListener(new View.OnClickListener()
+        {
+            @Override
+            public void onClick(View v)
+            {
+                Accelerometer.calibrate();
+            }
+        });
+
+
         Vars.sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE);
 
         ((TextView)findViewById(R.id.text)).setText(getLocalWifiIpAddress());
-        final WebSocketServer server=(new SimpleServer(new InetSocketAddress((int)41789)));
+        final SimpleServer server=(new SimpleServer(new InetSocketAddress((int)41789)));
         new Thread(new Runnable()
         {
             @Override
@@ -69,7 +81,7 @@ public class MainActivity extends AppCompatActivity
                 try
                 {
                     if(! Vars.connected) return;;
-                    JSONArray o=new JSONArray();
+                   /* JSONArray o=new JSONArray();
                     o.put(Rotation.n[0]);
                     o.put(Rotation.n[1]);
                     o.put(Rotation.n[2]);
@@ -82,8 +94,10 @@ public class MainActivity extends AppCompatActivity
                     JSONArray r=new JSONArray();
                     r.put(o);
                     r.put(p);
+                    r.
 
-                    server.broadcast(r.toString());
+                    server.broadcast(r.toString());*/
+                   server.send();
                 }
                 catch(Exception e)
                 {
@@ -154,11 +168,18 @@ class SimpleServer extends WebSocketServer
     @Override
     public void onMessage(WebSocket conn, String message)
     {
-        send();
+        //send();
+        if(message.equals("echo"))
+        {
+            JSONArray o=new JSONArray();
+            o.put("echo");
+            o.put(new Date().getTime());
+            broadcast(o.toString());
+        }
         //System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
     }
 
-    private void send()
+    public void send()
     {
         try
         {
@@ -177,7 +198,7 @@ class SimpleServer extends WebSocketServer
             JSONArray r=new JSONArray();
             r.put(o);
             r.put(p);
-            r.put(1);
+            r.put(new Date().getTime());
 
             broadcast(r.toString());
         }
@@ -211,8 +232,8 @@ class SimpleServer extends WebSocketServer
         String host="localhost";
         int port=8887;
 
-        WebSocketServer server=new SimpleServer(new InetSocketAddress(host, port));
-        server.run();
+        //SimpleServer server=new SimpleServer(new InetSocketAddress(host, port));
+        //server.run();
     }
 }
 
@@ -251,6 +272,9 @@ class Rotation implements SensorEventListener
         float k=(float)Math.sqrt(1-n_[2]*n_[2]);
         n0[0]=n_[0]/k;
         n0[1]=n_[1]/k;
+        Accelerometer.v[0]=0;
+        Accelerometer.v[1]=0;
+        Accelerometer.v[2]=0;
     }
     public void onSensorChanged(SensorEvent event)
     {
@@ -305,14 +329,48 @@ class Accelerometer implements SensorEventListener
     public long t=new Date().getTime();
     public static float[] v={0, 0, 0}, v_={0, 0, 0};
 
+    private float[] calibrationK={1, 1, 1};
+    private float[] calibrationOffset={0, 0, 0};
+    private static boolean calibrating=false;
+    private static int calibratingI=0;
+    private static float calibratingSum=0;
+
+    private static int STATE_REST=0;
+    private static int STATE_ACTIVE=1;
+
+    private static int state=Accelerometer.STATE_REST;
+    private static long startRestTime=0;
+
     public Accelerometer()
     {
+        calibartionInit();
         Vars.sensorManager.registerListener
                 (
                         this,
                         Vars.sensorManager.getDefaultSensor(Sensor.TYPE_ACCELEROMETER),
                         SensorManager.SENSOR_DELAY_FASTEST
                 );
+    }
+
+    private void calibartionInit()
+    {
+        for(int i=0; i<=2; i++)
+        {
+            float calibration1=Preferences.getFloat("accelerometer_g_"+Integer.toString(i)+"0", 0);
+            float calibration0=Preferences.getFloat("accelerometer_g_"+Integer.toString(i)+"1", 0);
+            if(calibration0!=0 && calibration1!=0)
+            {
+                calibrationOffset[i]=-(float)((calibration1+calibration0)/2.0);
+                calibrationK[i]=(float)(9.81*2.0/(calibration1-calibration0));
+            }
+        }
+    }
+
+    public static void calibrate()
+    {
+        calibrating=true;
+        calibratingI=0;
+        calibratingSum=0;
     }
 
     public void stop()
@@ -322,7 +380,8 @@ class Accelerometer implements SensorEventListener
 
     public void onSensorChanged(SensorEvent event)
     {
-        float[] a={event.values[0], event.values[1], event.values[2], 0};
+        float[] a__=event.values;
+        float[] a={(event.values[0]+calibrationOffset[0])*calibrationK[0], (event.values[1]+calibrationOffset[1])*calibrationK[1], (event.values[2]+calibrationOffset[2])*calibrationK[2], 0};
         float[] m=Vars.rotationMatrix;
         float[] a_=
         {
@@ -332,9 +391,26 @@ class Accelerometer implements SensorEventListener
         };
         a_[2]-=9.81;
         float l=V.absSquare(a_);
-        if(l<3.6)
+        if(l<2)
         {
-            a_=V.ps((float)-2, v);
+            long t=new Date().getTime();
+            if(state==Accelerometer.STATE_REST || startRestTime!=0 && t-startRestTime>300)
+            {
+                state=Accelerometer.STATE_REST;
+                v[0]=0;
+                v[1]=0;
+                v[2]=0;
+            }
+            else if(startRestTime==0)
+            {
+                startRestTime=t;
+            }
+          //  a_=V.ps((float)-2, v);
+        }
+        else
+        {
+            state=Accelerometer.STATE_ACTIVE;
+            startRestTime=0;
         }
         long t_=new Date().getTime();
         v=V.s(v, V.ps((float)(t_-t)/1000, a_));
@@ -362,6 +438,25 @@ class Accelerometer implements SensorEventListener
         this.v_[1]=v_[0]*nxy[1]+v_[1]*nxy[0];
 
         this.v_[2]=v[2];*/
+
+        if(calibrating)
+        {
+            if(calibratingI>100)
+            {
+                int calibratingSide=(Math.abs(a__[0])>Math.abs(1) ? 0 : Math.abs(a__[1])>Math.abs(a__[2]) ? 1 : 2);
+                int calibratingSide_=a__[calibratingSide]>0 ? 0 : 1;
+                Preferences.setFloat("accelerometer_g_"+Integer.toString(calibratingSide)+Integer.toString(calibratingSide_), calibratingSum/calibratingI);
+                calibartionInit();
+                calibrating=false;
+            }
+            else
+            {
+                calibratingI++;
+                float aMax=Math.max(Math.max(a__[0], a__[1]), a__[2]);
+                float aMin=Math.min(Math.min(a__[0], a__[1]), a__[2]);
+                calibratingSum+=aMax>-aMin ? aMax : aMin;
+            }
+        }
     }
 
     public void onAccuracyChanged(Sensor sensor, int accuracy)
