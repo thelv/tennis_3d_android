@@ -290,7 +290,7 @@ class Rotation implements SensorEventListener
         };
         this.n_=n_;
 
-        float[] p={0, 1, 0};
+        float[] p={-1, 0, 0};
         float[] p_=
                 {
                         m[0]*p[0]+m[1]*p[1]+m[2]*p[2],
