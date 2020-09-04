@@ -7,6 +7,7 @@ import android.hardware.Sensor;
 import android.hardware.SensorEvent;
 import android.hardware.SensorEventListener;
 import android.hardware.SensorManager;
+import android.os.Build;
 import android.os.Bundle;
 import org.java_websocket.WebSocket;
 import org.java_websocket.handshake.ClientHandshake;
@@ -21,7 +22,11 @@ import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 
 import android.net.wifi.WifiManager;
+import android.os.VibrationEffect;
+import android.os.Vibrator;
+import android.view.KeyEvent;
 import android.view.View;
+import android.view.WindowManager;
 import android.widget.TextView;
 
 import java.net.InetAddress;
@@ -38,7 +43,10 @@ public class MainActivity extends AppCompatActivity
     {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
+        getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         Preferences.init(this);
+
+        Vars.vibrator=(Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
 
         findViewById(R.id.all).setOnClickListener(new View.OnClickListener()
         {
@@ -110,6 +118,18 @@ public class MainActivity extends AppCompatActivity
         new Accelerometer();
     }
 
+    @Override
+    public boolean onKeyDown(int keyCode, KeyEvent event) {
+
+        if(keyCode==KeyEvent.KEYCODE_VOLUME_DOWN || keyCode==KeyEvent.KEYCODE_VOLUME_UP)
+        {
+            Rotation.reset();
+            return true;
+        }
+
+        return super.onKeyDown(keyCode, event);
+    }
+
     private String getLocalWifiIpAddress()
     {
         WifiManager wifiManager = (WifiManager) getApplicationContext().getSystemService(Context.WIFI_SERVICE);
@@ -139,6 +159,7 @@ class Vars
     public static float[] orientationAngles=new float[3];
     public static float[] rotationMatrix=new float[16];
     public static boolean connected=false;
+    public static Vibrator vibrator;
 }
 
 class SimpleServer extends WebSocketServer
@@ -175,6 +196,19 @@ class SimpleServer extends WebSocketServer
             o.put("echo");
             o.put(new Date().getTime());
             broadcast(o.toString());
+        }
+        else if(message.equals("hit"))
+        {
+// Vibrate for 500 milliseconds
+            if(Build.VERSION.SDK_INT>= Build.VERSION_CODES.O)
+            {
+                Vars.vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
+            }
+            else
+            {
+                //deprecated in API 26
+                Vars.vibrator.vibrate(500);
+            }
         }
         //System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
     }
@@ -270,8 +304,8 @@ class Rotation implements SensorEventListener
     public static void reset()
     {
         float k=(float)Math.sqrt(1-n_[2]*n_[2]);
-        n0[0]=n_[0]/k;
-        n0[1]=n_[1]/k;
+        n0[0]=-n_[0]/k;
+        n0[1]=-n_[1]/k;
         Accelerometer.v[0]=0;
         Accelerometer.v[1]=0;
         Accelerometer.v[2]=0;
@@ -299,9 +333,9 @@ class Rotation implements SensorEventListener
                 };
 
 
-        //this.n[0]=-n_[0]*n0[0]-n_[1]*n0[1];
-        //this.n[1]=n_[0]*n0[1]-n_[1]*n0[0];
-        if(n_[2]==1)
+        this.n[0]=-n_[0]*n0[0]-n_[1]*n0[1];
+        this.n[1]=n_[0]*n0[1]-n_[1]*n0[0];
+       /* if(n_[2]==1)
         {
             this.n[1]=0;
             this.n[0]=1;
@@ -312,7 +346,7 @@ class Rotation implements SensorEventListener
      //       this.n[0]=(float) Math.sqrt(1-this.n[1]*this.n[1]);
             this.n[1]=p_[2];
             this.n[0]=(float)Math.sqrt(1-this.n[1]*this.n[1]-n_[2]*n_[2]);
-        }
+        }*/
         this.n[2]=n_[2];
     }
 
@@ -340,6 +374,8 @@ class Accelerometer implements SensorEventListener
 
     private static int state=Accelerometer.STATE_REST;
     private static long startRestTime=0;
+
+    public static boolean rotationReseted=false;
 
     public Accelerometer()
     {
@@ -400,6 +436,12 @@ class Accelerometer implements SensorEventListener
                 v[0]=0;
                 v[1]=0;
                 v[2]=0;
+                if(! Accelerometer.rotationReseted)
+                {
+                    //Rotation.reset();
+                    Accelerometer.rotationReseted=true;
+                }
+
             }
             else if(startRestTime==0)
             {
@@ -410,6 +452,7 @@ class Accelerometer implements SensorEventListener
         else
         {
             state=Accelerometer.STATE_ACTIVE;
+            Accelerometer.rotationReseted=false;
             startRestTime=0;
         }
         long t_=new Date().getTime();
@@ -417,13 +460,13 @@ class Accelerometer implements SensorEventListener
         t=t_;
 
 
-        float[] n=Rotation.n_;
-        float k=(float)Math.sqrt(1-n[2]*n[2]);
-        float[] nxy={n[0]/k, n[1]/k};
+        float[] n=Rotation.n0;
+      //  float k=(float)Math.sqrt(1-n[2]*n[2]);
+       // float[] nxy={n[0], n[1]};
 
         float[] v_=new float[2];
-        v_[0]=-v[0]*nxy[0]-v[1]*nxy[1];
-        v_[1]=v[0]*nxy[1]-v[1]*nxy[0];
+        v_[0]=-v[0]*n[0]-v[1]*n[1];
+        v_[1]=v[0]*n[1]-v[1]*n[0];
 
         this.v_[0]=v_[0];
         this.v_[1]=v_[1];
