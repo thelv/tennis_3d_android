@@ -71,6 +71,7 @@ public class MainActivity extends AppCompatActivity
 
         ((TextView)findViewById(R.id.text)).setText(getLocalWifiIpAddress());
         final SimpleServer server=(new SimpleServer(new InetSocketAddress((int)41789)));
+        Vars.server=server;
         new Thread(new Runnable()
         {
             @Override
@@ -160,6 +161,7 @@ class Vars
     public static float[] rotationMatrix=new float[16];
     public static boolean connected=false;
     public static Vibrator vibrator;
+    public static WebSocketServer server;
 }
 
 class SimpleServer extends WebSocketServer
@@ -202,12 +204,12 @@ class SimpleServer extends WebSocketServer
 // Vibrate for 500 milliseconds
             if(Build.VERSION.SDK_INT>= Build.VERSION_CODES.O)
             {
-                Vars.vibrator.vibrate(VibrationEffect.createOneShot(500, VibrationEffect.DEFAULT_AMPLITUDE));
+                Vars.vibrator.vibrate(VibrationEffect.createOneShot(200, 1));
             }
             else
             {
                 //deprecated in API 26
-                Vars.vibrator.vibrate(500);
+                Vars.vibrator.vibrate(200);
             }
         }
         //System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
@@ -438,7 +440,9 @@ class Accelerometer implements SensorEventListener
                 v[2]=0;
                 if(! Accelerometer.rotationReseted)
                 {
-                    //Rotation.reset();
+                    Rotation.reset();
+                    Vars.server.broadcast("reset");
+                    Vars.vibrator.vibrate(200);
                     Accelerometer.rotationReseted=true;
                 }
 
