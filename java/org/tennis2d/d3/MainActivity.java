@@ -44,79 +44,86 @@ public class MainActivity extends AppCompatActivity
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
-        Preferences.init(this);
 
-        Vars.vibrator=(Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
-
-        findViewById(R.id.all).setOnClickListener(new View.OnClickListener()
+        if(! Vars.inited)
         {
-            @Override
-            public void onClick(View v)
+            Vars.inited=true;
+
+            Preferences.init(this);
+
+            Vars.vibrator=(Vibrator) getSystemService(Context.VIBRATOR_SERVICE);
+
+            findViewById(R.id.all).setOnClickListener(new View.OnClickListener()
             {
-                Rotation.reset();
-            }
-        });
-
-        findViewById(R.id.calibrate).setOnClickListener(new View.OnClickListener()
-        {
-            @Override
-            public void onClick(View v)
-            {
-                Accelerometer.calibrate();
-            }
-        });
-
-
-        Vars.sensorManager=(SensorManager)getSystemService(SENSOR_SERVICE);
-
-        ((TextView)findViewById(R.id.text)).setText(getLocalWifiIpAddress());
-        final SimpleServer server=(new SimpleServer(new InetSocketAddress((int)41789)));
-        Vars.server=server;
-        new Thread(new Runnable()
-        {
-            @Override
-            public void run()
-            {
-                server.run();
-            }
-        }).start();
-
-        Timer timer = new Timer();
-        timer.schedule(new TimerTask()
-        {
-            @Override
-            public void run()
-            {
-                try
+                @Override
+                public void onClick(View v)
                 {
-                    if(! Vars.connected) return;;
-                   /* JSONArray o=new JSONArray();
-                    o.put(Rotation.n[0]);
-                    o.put(Rotation.n[1]);
-                    o.put(Rotation.n[2]);
-
-                    JSONArray p=new JSONArray();
-                    p.put(Accelerometer.v_[0]);
-                    p.put(Accelerometer.v_[1]);
-                    p.put(Accelerometer.v_[2]);
-
-                    JSONArray r=new JSONArray();
-                    r.put(o);
-                    r.put(p);
-                    r.
-
-                    server.broadcast(r.toString());*/
-                   server.send();
+                    Rotation.reset(true);
                 }
-                catch(Exception e)
+            });
+
+            findViewById(R.id.calibrate).setOnClickListener(new View.OnClickListener()
+            {
+                @Override
+                public void onClick(View v)
                 {
-                    //
+                    Accelerometer.calibrate();
                 }
-            }
-        }, 0, 20);
+            });
 
-        new Rotation();
-        new Accelerometer();
+
+            Vars.sensorManager=(SensorManager) getSystemService(SENSOR_SERVICE);
+
+            ((TextView) findViewById(R.id.text)).setText(getLocalWifiIpAddress());
+            final SimpleServer server=(new SimpleServer(new InetSocketAddress((int) 41789)));
+            Vars.server=server;
+            new Thread(new Runnable()
+            {
+                @Override
+                public void run()
+                {
+                    server.run();
+                }
+            }).start();
+
+            Timer timer=new Timer();
+            timer.schedule(new TimerTask()
+            {
+                @Override
+                public void run()
+                {
+                    try
+                    {
+                        if(!Vars.connected) return;
+                        ;
+                       /* JSONArray o=new JSONArray();
+                        o.put(Rotation.n[0]);
+                        o.put(Rotation.n[1]);
+                        o.put(Rotation.n[2]);
+
+                        JSONArray p=new JSONArray();
+                        p.put(Accelerometer.v_[0]);
+                        p.put(Accelerometer.v_[1]);
+                        p.put(Accelerometer.v_[2]);
+
+                        JSONArray r=new JSONArray();
+                        r.put(o);
+                        r.put(p);
+                        r.
+
+                        server.broadcast(r.toString());*/
+                        server.send();
+                    }
+                    catch(Exception e)
+                    {
+                        //
+                    }
+                }
+            }, 0, 20);
+
+            new Rotation();
+            new Accelerometer();
+        }
     }
 
     @Override
@@ -124,7 +131,7 @@ public class MainActivity extends AppCompatActivity
 
         if(keyCode==KeyEvent.KEYCODE_VOLUME_DOWN || keyCode==KeyEvent.KEYCODE_VOLUME_UP)
         {
-            Rotation.reset();
+            Rotation.reset(true);
             return true;
         }
 
@@ -162,6 +169,7 @@ class Vars
     public static boolean connected=false;
     public static Vibrator vibrator;
     public static WebSocketServer server;
+    public static boolean inited=false;
 }
 
 class SimpleServer extends WebSocketServer
@@ -199,17 +207,19 @@ class SimpleServer extends WebSocketServer
             o.put(new Date().getTime());
             broadcast(o.toString());
         }
-        else if(message.equals("hit"))
+        else if(message.startsWith("hit"))
         {
+            int force=Integer.parseInt(message.substring(3));
+            Accelerometer.rotationReseted=false;
 // Vibrate for 500 milliseconds
             if(Build.VERSION.SDK_INT>= Build.VERSION_CODES.O)
             {
-                Vars.vibrator.vibrate(VibrationEffect.createOneShot(200, 1));
+                Vars.vibrator.vibrate(VibrationEffect.createOneShot(force, 1));
             }
             else
             {
                 //deprecated in API 26
-                Vars.vibrator.vibrate(200);
+                Vars.vibrator.vibrate(force);
             }
         }
         //System.out.println("received message from "+conn.getRemoteSocketAddress()+": "+message);
@@ -279,6 +289,7 @@ class Rotation implements SensorEventListener
     public static float[] n_={0, 0, 1};
     public static float[] n={0, 0, 1};
     public static float[] n0={0, 1};
+    public static boolean resetFirst=true;
 
     public Rotation()
     {
@@ -303,11 +314,26 @@ class Rotation implements SensorEventListener
         Vars.sensorManager.unregisterListener(this);
     }
 
-    public static void reset()
+    public static void reset(boolean touch)
     {
         float k=(float)Math.sqrt(1-n_[2]*n_[2]);
-        n0[0]=-n_[0]/k;
-        n0[1]=-n_[1]/k;
+        float[] n0_=new float[2];
+        n0_[0]=-n_[0]/k;
+        n0_[1]=-n_[1]/k;
+
+        if(resetFirst || touch)
+        {
+            resetFirst=false;
+        }
+        else if(n0[0]*n0_[0]+n0[1]*n0_[1]<0)
+        {
+            n0_[0]=-n0_[0];
+            n0_[1]=-n0_[1];
+        }
+
+        n0[0]=n0_[0];
+        n0[1]=n0_[1];
+
         Accelerometer.v[0]=0;
         Accelerometer.v[1]=0;
         Accelerometer.v[2]=0;
@@ -429,7 +455,7 @@ class Accelerometer implements SensorEventListener
         };
         a_[2]-=9.81;
         float l=V.absSquare(a_);
-        if(l<2)
+        if(l<1)
         {
             long t=new Date().getTime();
             if(state==Accelerometer.STATE_REST || startRestTime!=0 && t-startRestTime>300)
@@ -440,9 +466,9 @@ class Accelerometer implements SensorEventListener
                 v[2]=0;
                 if(! Accelerometer.rotationReseted)
                 {
-                    Rotation.reset();
+                    Rotation.reset(false);
                     Vars.server.broadcast("reset");
-                    Vars.vibrator.vibrate(200);
+                    Vars.vibrator.vibrate(50);
                     Accelerometer.rotationReseted=true;
                 }
 
@@ -456,7 +482,7 @@ class Accelerometer implements SensorEventListener
         else
         {
             state=Accelerometer.STATE_ACTIVE;
-            Accelerometer.rotationReseted=false;
+         //   Accelerometer.rotationReseted=false;
             startRestTime=0;
         }
         long t_=new Date().getTime();
