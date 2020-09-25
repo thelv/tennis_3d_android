@@ -14,6 +14,7 @@ import org.java_websocket.handshake.ClientHandshake;
 import org.java_websocket.server.WebSocketServer;
 import org.json.JSONArray;
 
+import androidx.constraintlayout.widget.ConstraintLayout;
 import ru.thelv.lib.V;
 
 import java.math.BigInteger;
@@ -27,6 +28,7 @@ import android.os.Vibrator;
 import android.view.KeyEvent;
 import android.view.View;
 import android.view.WindowManager;
+import android.widget.LinearLayout;
 import android.widget.TextView;
 
 import java.net.InetAddress;
@@ -38,12 +40,18 @@ import ru.thelv.lib.Preferences;
 
 public class MainActivity extends AppCompatActivity
 {
+    public static MainActivity o;
+    public Pedals pedals;
+
     @Override
     protected void onCreate(Bundle savedInstanceState)
     {
+        o=this;
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
+
+        Pedals.resume((ConstraintLayout) findViewById(R.id.all));
 
         if(! Vars.inited)
         {
@@ -58,7 +66,7 @@ public class MainActivity extends AppCompatActivity
                 @Override
                 public void onClick(View v)
                 {
-                    Rotation.reset(true);
+                    //Rotation.reset(true);
                 }
             });
 
@@ -244,6 +252,7 @@ class SimpleServer extends WebSocketServer
             JSONArray r=new JSONArray();
             r.put(o);
             r.put(p);
+            r.put(Pedals.level);
             r.put(new Date().getTime());
 
             broadcast(r.toString());
@@ -323,6 +332,8 @@ class Rotation implements SensorEventListener
 
         if(resetFirst || touch)
         {
+            n0_[0]=-n0_[0];
+            n0_[1]=-n0_[1];
             resetFirst=false;
         }
         else if(n0[0]*n0_[0]+n0[1]*n0_[1]<0)
@@ -455,7 +466,7 @@ class Accelerometer implements SensorEventListener
         };
         a_[2]-=9.81;
         float l=V.absSquare(a_);
-        if(l<1)
+        if(l<1.5)
         {
             long t=new Date().getTime();
             if(state==Accelerometer.STATE_REST || startRestTime!=0 && t-startRestTime>300)
